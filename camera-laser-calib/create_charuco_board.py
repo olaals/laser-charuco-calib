@@ -32,9 +32,11 @@ def create_printable_aruco_grid(aruco_dict_str, px_width, squares_x,squares_y, s
         aruko_size = spacing_ratio*ch_board_sq_size
         print("ch_board_size", ch_board_sq_size)
         print("aruko_size", aruko_size)
+    font_scale = px_width/1000.0
+    font_thickness = px_width//500
     label = "APRILTAG_16H5" + f' SZ_CH_SQ:{np.round(ch_board_sq_size, 3)}mm'
     label += f' AR_SZ:{np.round(aruko_size, 3)}mm' + f' start id: {str(start_id)}'
-    imboard = cv2.putText(img, label, (100,100), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=5, color=(0,0,0), thickness=5)
+    imboard = cv2.putText(img, label, (100,100), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=font_scale, color=(0,0,0), thickness=font_thickness)
     img = img.T
     img = cv2.flip(img,1)
     aruco_board_dict={

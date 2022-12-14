@@ -1,0 +1,8 @@
+{
+    "aruco_dict_str": "DICT_APRILTAG_16H5",
+    "square_x": 7,
+    "square_y": 6,
+    "cb_sq_width": 14.099,
+    "aruco_sq_width": 9.16435,
+    "start_id": 0
+}
