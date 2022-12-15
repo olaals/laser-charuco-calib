@@ -1,6 +1,7 @@
 from harvesters.core import Harvester
 import cv2
 import numpy as np
+import os
 
 
 class GenicamRGB():
@@ -116,21 +117,34 @@ class GenicamTest():
             b = img_2d[0::4,3::4]
             return np.dstack([b,g,r])
 
+def capture_stereo():
+    cti_path = '/opt/cvb-13.04.001/drivers/genicam/libGevTL.cti'
+    cap = GenicamStereoRGB(cti_path)
+    left_save_path = 'laser-images/test-images/left'
+    right_save_path = 'laser-images/test-images/right'
+    save_index = 0
+    while(True):
+        (img1,img2) = cap.read()
+        cv2.imshow("main", img1)
+        cv2.imshow("main2", img2)
+
+        c = cv2.waitKey(1)
+        if c == 27:
+            break
+        # save if s is pressed
+        if c == ord('s'):
+            cv2.imwrite(os.path.join(left_save_path, "img"+format(save_index, '02d')+'.png'), img1)
+            cv2.imwrite(os.path.join(right_save_path, "img"+format(save_index, '02d')+'.png'), img2)
+            save_index += 1
+
+
+
 
             
 
 
 if __name__ == '__main__':
-    cti_path = '/opt/cvb-13.04.001/drivers/genicam/libGevTL.cti'
-    cap = GenicamStereoRGB(cti_path)
-    while(True):
-        (img1,img2) = cap.read()
-        cv2.imshow("main", img1)
-        cv2.imshow("main2", img2)
-        c = cv2.waitKey(1)
-        if c == 27:
-            break
-
+    capture_stereo()
 
 
 
