@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import glob
 from utils import *
+import rhovee as rv
 
 def calibrate_camera(image_paths, board, req_markers=10):
     all_corners = []
@@ -113,8 +114,7 @@ def process_laser_img(img):
     img = np.where(img > 50, img, 0)
     return img
 
-def row_wise_mean(img):
-    return np.mean(img, axis=1)
+
 
 
 def stereo_matching(left_img, right_img, max_disp=64, block_size=5):
@@ -123,6 +123,43 @@ def stereo_matching(left_img, right_img, max_disp=64, block_size=5):
     stereo = cv2.StereoSGBM_create(minDisparity=0, numDisparities=max_disp, blockSize=block_size)
     disparity = stereo.compute(left_img, right_img)
     return disparity
+
+def cross_prod_mat(mat):
+    mat = mat.squeeze()
+    return np.array([[0, -mat[2], mat[1]], [mat[2], 0, -mat[0]], [-mat[1], mat[0], 0]])
+
+
+def get_essential_matrix(R_12, t_12):
+    T = np.eye(4)
+    T[:3,:3] = R_12
+    T[:3,3] = t_12
+    T_inv = np.linalg.inv(T)
+    R_21 = T_inv[:3,:3]
+    t_21 = T_inv[:3,3]
+    E = cross_prod_mat(t_21)@(R_21)
+    return E
+
+def homg_points_to_plucker_line(pt1, pt2):
+    pt1 = pt1.squeeze()
+    pt2 = pt2.squeeze()
+    if pt1.shape[0] == 3:
+        pt1 = np.append(pt1, 1)
+    if pt2.shape[0] == 3:
+        pt2 = np.append(pt2, 1)
+    l = pt1[3]*pt2[:3] - pt2[3]*pt1[:3]
+    l_dash = np.cross(pt1[:3],pt2[:3])
+    return l, l_dash
+
+def intersect_plucker_lines(l1, l1_dash, l2, l2_dash):
+    n = np.cross(l1, l2)
+    v = np.zeros(4)
+    v[:3] = np.cross(n, l1)
+    v[3] = np.dot(n, l1_dash)
+    x = np.zeros(4)
+    x[:3] = -v[3]*l2+np.cross(v[:3], l2_dash)
+    x[3] = np.dot(v[:3], l2)
+    x = x / x[3]
+    return x[:3]
 
 
 
@@ -157,6 +194,9 @@ if __name__ == '__main__':
     print(avg_l_to_r_T)
     R = avg_l_to_r_T[:3,:3]
     t = avg_l_to_r_T[:3,3]
+    t = t/1000.0
+    print("R", R)
+    print("t", t)
     print("Rotation axis angle degrees")
     print(rotation_mat_to_axis_angle(R) * 180 / np.pi)
 
@@ -165,20 +205,85 @@ if __name__ == '__main__':
     right_laser_paths = glob.glob('laser-images/test-images/right/*.png')
     left_laser_paths.sort()
     right_laser_paths.sort()
+    all_pts = []
 
     for left_laser_path,right_laser_path in zip(left_laser_paths, right_laser_paths):
-        left_laser_img = cv2.imread(left_laser_path)
-        left_laser_img = process_laser_img(left_laser_img)
-        right_laser_img = cv2.imread(right_laser_path)
-        right_laser_img = process_laser_img(right_laser_img)
+        limg = cv2.imread(left_laser_path, 0)
+        rimg = cv2.imread(right_laser_path, 0)
+        lK = l_cam_mat
+        ldc = l_dist_coeffs
+        rK = r_cam_mat
+        rdc = r_dist_coeffs
+        points = rv.cv.triangulate_laser_lines(limg, rimg, 50, R, t, lK, ldc, rK, rdc, 0)
+        all_pts.append(points)
+        """
+        left_laser_img = cv2.imread(left_laser_path, 0)
+        # undistort the images
+        left_laser_img = cv2.undistort(left_laser_img, l_cam_mat, l_dist_coeffs)
+        #left_laser_img = process_laser_img(left_laser_img)
+        right_laser_img = cv2.imread(right_laser_path, 0)
+        right_laser_img = cv2.undistort(right_laser_img, r_cam_mat, r_dist_coeffs)
+        l_homg = rv.cv.get_laser_line_as_homg(left_laser_img, 50, 0)
+        r_homg = rv.cv.get_laser_line_as_homg(right_laser_img, 50, 0)
+        l_mean_rows = rv.cv.weighted_mean_row_index(left_laser_img, 50, 0)
+        l_points = rv.cv.row_list_to_points(l_mean_rows)
+        print("l_points", l_points)
+        E = get_essential_matrix(R, t)
+        F = np.linalg.inv(r_cam_mat.T) @ E @ np.linalg.inv(l_cam_mat)
+        zero_img = right_laser_img.copy()
 
-        #left_laser_img = cv2.cvtColor(left_laser_img, cv2.COLOR_GRAY2BGR)
-        #left_laser_img = draw_frame_axes(left_laser_img, l_cam_mat, l_dist_coeffs, avg_l_to_r_T)
-        disparity = stereo_matching(left_laser_img, right_laser_img)
-        cv2.imshow('left laser', left_laser_img)
-        cv2.waitKey(0)
-        # show disparity    
-        cv2.imshow('disparity', disparity)
+        for idx,point in enumerate(l_points):
+            if idx%20 == 0:
+                #l_point = np.array([point[0], point[1], 1])
+                line = F @ point
+                # intersect r_homg and line
+                intersect_r = np.cross(r_homg, line)
+                intersect_r = intersect_r / intersect_r[2]
+                norm_r = np.linalg.inv(r_cam_mat) @ intersect_r
+                norm_r = norm_r / norm_r[2]
+                # transform to left camera frame
+                norm_l = R @ norm_r + t
+                print("t", t)
+                print("norm_l shape", norm_l.shape)
+                print("t shape", t.shape)
+                line_r, line_r_dash = homg_points_to_plucker_line(norm_l, t)
+                pl_line_l = np.linalg.inv(l_cam_mat) @ point
+                line_l = pl_line_l
+                line_l_dash = np.zeros(3)
+                # intersect line_r and line_l
+                x = intersect_plucker_lines(line_r, line_r_dash, line_l, line_l_dash)
+                print("x", x)
+                all_pts.append(x)
+                
+        """
+
+
+                
+
+
+
+
+                #img_line = rv.cv.draw_homg_line(zero_img, line)
+                #cv2.imshow("img_line", img_line)
+                #kcv2.waitKey(0)
+    # visualize the points
+    all_pts = np.vstack(all_pts)
+    print("all_pts", all_pts)
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(all_pts[:,0], all_pts[:,1], all_pts[:,2])
+    # label xyz axes
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    plt.show()
+
+
+
+
+
+
+
 
     
 
