@@ -169,7 +169,6 @@ if __name__ == '__main__':
     board_json = "boards/DICT_APRILTAG_16H5_7x6_start_id_0_1000/board_dict.json"
     board_dict = read_json(board_json)
     board = load_board_from_dict(board_dict)
-
     left_image_paths = glob.glob('calib-images/test-images/left/*.png')
     right_image_paths = glob.glob('calib-images/test-images/right/*.png')
     left_image_paths.sort()
